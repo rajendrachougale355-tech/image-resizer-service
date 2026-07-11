@@ -2,224 +2,359 @@ import os
 from flask import Flask, request, send_file, jsonify, render_template_string
 from PIL import Image
 import io
-import base64
 
 app = Flask(__name__)
 
-# Complete interactive single-page dashboard app
 HTML_UI = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image Resizer Dashboard</title>
+    <title>CloudScale | Image Optimization Microservice</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-accent: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-blue-hover: #2563eb;
+            --accent-green: #10b981;
+            --border-color: #475569;
+        }
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f1f5f9;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-main);
             margin: 0;
-            padding: 40px 20px;
-            display: flex;
-            justify-content: center;
-        }
-        .container {
-            background: white;
-            padding: 35px;
-            border-radius: 16px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-            max-width: 900px;
-            width: 100%;
-        }
-        .header { text-align: center; margin-bottom: 30px; }
-        h2 { color: #1e293b; margin: 0 0 8px 0; }
-        p { color: #64748b; margin: 0; font-size: 15px; }
-        
-        .workspace {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin-top: 20px;
-        }
-        @media (max-width: 768px) {
-            .workspace { grid-template-columns: 1fr; }
-        }
-        
-        .control-panel {
-            border-right: 1px solid #e2e8f0;
-            padding-right: 20px;
-        }
-        @media (max-width: 768px) {
-            .control-panel { border-right: none; padding-right: 0; }
-        }
-        
-        .form-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 8px; color: #475569; font-weight: 600; font-size: 14px; }
-        input[type="file"] {
-            width: 100%;
-            padding: 12px;
-            background: #f8fafc;
-            border: 2px dashed #cbd5e1;
-            border-radius: 8px;
-            box-sizing: border-box;
-            cursor: pointer;
-        }
-        .dimensions { display: flex; gap: 15px; }
-        .dimensions .form-group { flex: 1; }
-        input[type="number"] {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #cbd5e1;
-            border-radius: 8px;
-            box-sizing: border-box;
-        }
-        
-        button {
-            width: 100%;
-            background: #2563eb;
-            color: white;
-            border: none;
-            padding: 14px;
-            font-size: 16px;
-            font-weight: 600;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background 0.2s;
-            margin-top: 10px;
-        }
-        button:hover { background: #1d4ed8; }
-        
-        .result-panel {
+            padding: 0;
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
+        }
+
+        /* Top Enterprise Navbar */
+        .navbar {
+            background-color: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 14px 24px;
+            display: flex;
+            justify-content: space-between;
             align-items: center;
-            justify-content: center;
-            background: #f8fafc;
+        }
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+            font-size: 18px;
+            letter-spacing: -0.5px;
+        }
+        .nav-logo span { color: var(--accent-blue); }
+        .badge {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--accent-blue);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            padding: 3px 8px;
             border-radius: 12px;
-            border: 1px solid #e2e8f0;
-            padding: 20px;
-            min-height: 300px;
-            text-align: center;
+            font-size: 11px;
+            font-weight: 600;
         }
-        .preview-box {
-            max-width: 100%;
-            max-height: 350px;
+
+        /* Main Layout Workspace */
+        .main-layout {
+            max-width: 1280px;
+            width: 100%;
+            margin: 40px auto;
+            padding: 0 24px;
+            box-sizing: border-box;
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            gap: 32px;
+            flex-grow: 1;
+        }
+
+        @media (max-width: 968px) {
+            .main-layout { grid-template-columns: 1fr; }
+        }
+
+        /* App Cards */
+        .card {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+        }
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 0;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-subtitle {
+            color: var(--text-muted);
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+
+        /* Forms styling */
+        .form-group { margin-bottom: 20px; }
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: var(--text-muted);
+        }
+        
+        /* Custom Upload Area */
+        .file-upload-wrapper {
+            position: relative;
+            border: 2px dashed var(--border-color);
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            display: none;
-            margin-bottom: 15px;
-        }
-        .placeholder-text { color: #94a3b8; font-style: italic; }
-        .download-btn {
-            background: #10b981;
-            display: none;
-            text-decoration: none;
+            padding: 20px;
             text-align: center;
+            background: rgba(15, 23, 42, 0.4);
+            transition: border-color 0.2s;
+        }
+        .file-upload-wrapper:hover { border-color: var(--accent-blue); }
+        .file-upload-wrapper input[type="file"] {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            opacity: 0; cursor: pointer;
+        }
+        .upload-text { font-size: 13px; color: var(--text-muted); }
+        .upload-text strong { color: var(--accent-blue); }
+
+        /* Configuration Dimensions */
+        .dimensions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        input[type="number"] {
+            width: 100%;
+            background-color: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px;
+            color: var(--text-main);
+            font-size: 14px;
             box-sizing: border-box;
         }
-        .download-btn:hover { background: #059669; }
-        .footer { text-align: center; margin-top: 35px; font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 15px; }
+        input[type="number"]:focus { border-color: var(--accent-blue); outline: none; }
+
+        /* Actions Button */
+        button {
+            background-color: var(--accent-blue);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            width: 100%;
+            margin-top: 10px;
+        }
+        button:hover { background-color: var(--accent-blue-hover); }
+        button:disabled { background-color: var(--bg-accent); color: var(--text-muted); cursor: not-allowed; }
+
+        /* Display Viewport (Right Side) */
+        .viewport-card { min-height: 450px; justify-content: center; align-items: center; position: relative; }
+        .preview-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+        }
+        .preview-image {
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            border: 1px solid var(--border-color);
+        }
+        .empty-state { text-align: center; color: var(--text-muted); font-size: 14px; }
+        .empty-state-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
+
+        /* Metrics Bar */
+        .metrics-bar {
+            display: flex;
+            gap: 24px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-color);
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .metric-item { font-size: 12px; color: var(--text-muted); }
+        .metric-item strong { color: var(--text-main); display: block; font-size: 14px; margin-top: 2px; }
+
+        .btn-download {
+            background-color: var(--accent-green);
+            color: white;
+            text-decoration: none;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            text-align: center;
+            width: 100%;
+            box-sizing: border-box;
+            margin-top: 16px;
+            display: block;
+        }
+        .btn-download:hover { opacity: 0.9; }
+
+        /* System Logs / Footer banner */
+        .footer-banner {
+            text-align: center;
+            padding: 20px;
+            font-size: 12px;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border-color);
+            background-color: var(--bg-secondary);
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h2>📷 Microservice Image Control Panel</h2>
-            <p>Live image manipulation architecture running on AWS infrastructure</p>
+
+    <!-- Header Navigation Bar -->
+    <div class="navbar">
+        <div class="nav-logo">⚡ CloudScale <span>// Engine</span></div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div class="badge">AWS RUNTIME ACTIVE</div>
         </div>
-        
-        <div class="workspace">
-            <!-- Left Side: Controls -->
-            <div class="control-panel">
-                <form id="uploadForm">
-                    <div class="form-group">
-                        <label for="imageInput">Upload Image File</label>
-                        <input type="file" id="imageInput" accept="image/*" required>
-                    </div>
-                    
-                    <div class="dimensions">
-                        <div class="form-group">
-                            <label for="widthInput">Target Width (px)</label>
-                            <input type="number" id="widthInput" value="400" min="10" max="2000">
-                        </div>
-                        <div class="form-group">
-                            <label for="heightInput">Target Height (px)</label>
-                            <input type="number" id="heightInput" value="400" min="10" max="2000">
-                        </div>
-                    </div>
-                    
-                    <button type="submit" id="submitBtn">Process & Display Result</button>
-                </form>
-            </div>
-            
-            <!-- Right Side: Live Results View -->
-            <div class="result-panel" id="resultPanel">
-                <span class="placeholder-text" id="placeholder">Processed image display area</span>
-                <img src="" id="resultPreview" class="preview-box" alt="Resized output preview">
-                <a href="" id="downloadLink" class="download-btn" download="resized_image.jpg">Download Image Asset</a>
-            </div>
-        </div>
-        
-        <div class="footer">Continuous Deployment Management Engine • Active State</div>
     </div>
 
-    <!-- JavaScript to intercept form submission and show results instantly on page -->
+    <!-- Main Content Container -->
+    <div class="main-layout">
+        
+        <!-- Left Side: Control Settings Panel -->
+        <div class="card">
+            <h3 class="card-title">Configuration</h3>
+            <div class="card-subtitle">Set execution variables for processing</div>
+            
+            <form id="resizerForm">
+                <div class="form-group">
+                    <label>INPUT TARGET SOURCE</label>
+                    <div class="file-upload-wrapper">
+                        <span class="upload-text" id="fileStatusLabel">Drag file here or <strong>browse</strong></span>
+                        <input type="file" id="imageInput" accept="image/*" required>
+                    </div>
+                </div>
+                
+                <div class="dimensions-grid">
+                    <div class="form-group">
+                        <label>TARGET WIDTH (PX)</label>
+                        <input type="number" id="widthInput" value="500" min="10" max="3000">
+                    </div>
+                    <div class="form-group">
+                        <label>TARGET HEIGHT (PX)</label>
+                        <input type="number" id="heightInput" value="500" min="10" max="3000">
+                    </div>
+                </div>
+                
+                <button type="submit" id="processBtn">Execute Pipeline Tasks</button>
+            </form>
+        </div>
+
+        <!-- Right Side: Live Asset Output Viewport -->
+        <div class="card viewport-card">
+            <!-- Default Placeholder State -->
+            <div class="empty-state" id="emptyState">
+                <div class="empty-state-icon">🖼️</div>
+                <div>Awaiting payload image assets for optimization processing...</div>
+            </div>
+
+            <!-- Active Output Result State -->
+            <div class="preview-container" id="previewContainer">
+                <img src="" id="outputImage" class="preview-image" alt="Optimized output asset">
+                
+                <div class="metrics-bar">
+                    <div class="metric-item">OUTPUT DIMENSIONS<strong id="metricDim">0 x 0</strong></div>
+                    <div class="metric-item">RUNTIME ENVIRONMENT<strong>AWS EC2 Container</strong></div>
+                    <div class="metric-item">STATUS BADGE<strong style="color: var(--accent-green);">SUCCESS (200)</strong></div>
+                </div>
+
+                <a href="" id="downloadLink" class="btn-download" download="optimized_asset.jpg">Download Image Asset</a>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- System Status Footer Banner -->
+    <div class="footer-banner">
+        Infrastructure Orchestration Node Deployed via Jenkins CI/CD Lifecycle Automation.
+    </div>
+
     <script>
-        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+        // Real-time file name reflection
+        document.getElementById('imageInput').addEventListener('change', function(e) {
+            const fileName = e.target.files[0] ? e.target.files[0].name : "Browse files";
+            document.getElementById('fileStatusLabel').innerText = fileName;
+        });
+
+        // Intercept network requests via JavaScript
+        document.getElementById('resizerForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
-            const fileInput = document.getElementById('imageInput').files[0];
+            const file = document.getElementById('imageInput').files[0];
             const width = document.getElementById('widthInput').value;
             const height = document.getElementById('heightInput').value;
-            const submitBtn = document.getElementById('submitBtn');
-            const placeholder = document.getElementById('placeholder');
-            const preview = document.getElementById('resultPreview');
-            const downloadBtn = document.getElementById('downloadLink');
             
-            if (!fileInput) return;
+            const processBtn = document.getElementById('processBtn');
+            const emptyState = document.getElementById('emptyState');
+            const previewContainer = document.getElementById('previewContainer');
+            const outputImage = document.getElementById('outputImage');
+            const downloadLink = document.getElementById('downloadLink');
             
-            // Show loading state
-            submitBtn.disabled = true;
-            submitBtn.innerText = "Processing in Cloud Container...";
-            placeholder.innerText = "Processing image tensors...";
-            preview.style.display = "none";
-            downloadBtn.style.display = "none";
+            if(!file) return;
+
+            // Loading state adjustments
+            processBtn.disabled = true;
+            processBtn.innerText = "Processing Cloud Tensors...";
             
             const formData = new FormData();
-            formData.append('image', fileInput);
+            formData.append('image', file);
             formData.append('width', width);
             formData.append('height', height);
-            
+
             try {
-                // Submit payload via background API call
                 const response = await fetch('/resize', {
                     method: 'POST',
                     body: formData
                 });
-                
-                if (!response.ok) throw new Error("Processing failure");
-                
-                // Read binary response data stream
+
+                if(!response.ok) throw new Error("API Failure Status");
+
                 const blob = await response.blob();
-                const imageUrl = URL.createObjectURL(blob);
+                const blobUrl = URL.createObjectURL(blob);
+
+                // Update viewport rendering
+                emptyState.style.display = "none";
+                previewContainer.style.display = "flex";
+                outputImage.src = blobUrl;
+                downloadLink.href = blobUrl;
+                downloadLink.download = `optimized_${file.name}`;
                 
-                // Inject the image dynamically into the DOM view
-                placeholder.style.display = "none";
-                preview.src = imageUrl;
-                preview.style.display = "block";
-                
-                // Prepare live context download button
-                downloadBtn.href = imageUrl;
-                downloadBtn.style.display = "block";
-                downloadBtn.style.width = "100%";
-                downloadBtn.style.marginTop = "15px";
-                
-            } catch (error) {
-                alert("Error handling image manipulation request.");
-                placeholder.innerText = "Error processing data.";
+                document.getElementById('metricDim').innerText = `${width}px × ${height}px`;
+
+            } catch (err) {
+                alert("Runtime error during remote service manipulation processing tasks.");
             } finally {
-                submitBtn.disabled = false;
-                submitBtn.innerText = "Process & Display Result";
+                processBtn.disabled = false;
+                processBtn.innerText = "Execute Pipeline Tasks";
             }
         });
     </script>
@@ -238,12 +373,12 @@ def health_check():
 @app.route('/resize', methods=['POST'])
 def resize_image():
     if 'image' not in request.files:
-        return jsonify({"error": "No image data"}), 400
+        return jsonify({"error": "No asset file parsed"}), 400
     
     file = request.files['image']
     try:
-        width = int(request.form.get('width', 400))
-        height = int(request.form.get('height', 400))
+        width = int(request.form.get('width', 500))
+        height = int(request.form.get('height', 500))
 
         img = Image.open(file.stream)
         img_format = img.format if img.format else 'JPEG'
