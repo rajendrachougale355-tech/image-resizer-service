@@ -8,7 +8,7 @@ pipeline {
     environment {
         DOCKER_HUB_USER  = "rajchouugale"
         IMAGE_NAME       = "image-resizer"
-        SERVER_IP        = "13.207.204.43"
+        SERVER_IP        = "13.233.167.76"
         DOCKER_CREDS_ID  = "rajchouugale"
         SSH_CREDS_ID     = "aws-server-ssh-key"
     }
