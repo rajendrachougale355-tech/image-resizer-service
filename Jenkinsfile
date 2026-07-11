@@ -46,10 +46,12 @@ pipeline {
                     ssh -o StrictHostKeyChecking=no ubuntu@${SERVER_IP} '
                         echo "Successfully logged into AWS EC2 server!"
                         docker pull ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
+                        
                         docker stop ${IMAGE_NAME} || true
                         docker rm ${IMAGE_NAME} || true
-                        echo "Executing the microservice in the cloud environment..."
-                        docker run --name ${IMAGE_NAME} --rm ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
+                        
+                        echo "Executing the microservice in background detached mode on port 80..."
+                        docker run -d -p 80:5000 --name ${IMAGE_NAME} --restart unless-stopped ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
                     '
                     """
                 }
