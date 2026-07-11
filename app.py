@@ -2,6 +2,7 @@ import os
 from flask import Flask, request, send_file, jsonify, render_template_string
 from PIL import Image
 import io
+import zipfile
 
 app = Flask(__name__)
 
@@ -11,7 +12,7 @@ HTML_UI = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CloudScale | Image Optimization Microservice</title>
+    <title>CloudScale | Bulk Image Optimization</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -37,7 +38,6 @@ HTML_UI = """
             flex-direction: column;
         }
 
-        /* Top Enterprise Navbar */
         .navbar {
             background-color: var(--bg-secondary);
             border-bottom: 1px solid var(--border-color);
@@ -47,9 +47,6 @@ HTML_UI = """
             align-items: center;
         }
         .nav-logo {
-            display: flex;
-            align-items: center;
-            gap: 10px;
             font-weight: 700;
             font-size: 18px;
             letter-spacing: -0.5px;
@@ -65,7 +62,6 @@ HTML_UI = """
             font-weight: 600;
         }
 
-        /* Main Layout Workspace */
         .main-layout {
             max-width: 1280px;
             width: 100%;
@@ -82,7 +78,6 @@ HTML_UI = """
             .main-layout { grid-template-columns: 1fr; }
         }
 
-        /* App Cards */
         .card {
             background-color: var(--bg-secondary);
             border: 1px solid var(--border-color);
@@ -91,37 +86,17 @@ HTML_UI = """
             display: flex;
             flex-direction: column;
         }
-        .card-title {
-            font-size: 16px;
-            font-weight: 600;
-            margin-top: 0;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .card-subtitle {
-            color: var(--text-muted);
-            font-size: 13px;
-            margin-bottom: 24px;
-        }
+        .card-title { font-size: 16px; font-weight: 600; margin-top: 0; margin-bottom: 8px; }
+        .card-subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 24px; }
 
-        /* Forms styling */
         .form-group { margin-bottom: 20px; }
-        label {
-            display: block;
-            font-size: 13px;
-            font-weight: 500;
-            margin-bottom: 8px;
-            color: var(--text-muted);
-        }
+        label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-muted); }
         
-        /* Custom Upload Area */
         .file-upload-wrapper {
             position: relative;
             border: 2px dashed var(--border-color);
             border-radius: 8px;
-            padding: 20px;
+            padding: 30px 20px;
             text-align: center;
             background: rgba(15, 23, 42, 0.4);
             transition: border-color 0.2s;
@@ -135,7 +110,6 @@ HTML_UI = """
         .upload-text { font-size: 13px; color: var(--text-muted); }
         .upload-text strong { color: var(--accent-blue); }
 
-        /* Configuration Dimensions */
         .dimensions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
         input[type="number"] {
             width: 100%;
@@ -147,9 +121,7 @@ HTML_UI = """
             font-size: 14px;
             box-sizing: border-box;
         }
-        input[type="number"]:focus { border-color: var(--accent-blue); outline: none; }
 
-        /* Actions Button */
         button {
             background-color: var(--accent-blue);
             color: white;
@@ -166,36 +138,54 @@ HTML_UI = """
         button:hover { background-color: var(--accent-blue-hover); }
         button:disabled { background-color: var(--bg-accent); color: var(--text-muted); cursor: not-allowed; }
 
-        /* Display Viewport (Right Side) */
-        .viewport-card { min-height: 450px; justify-content: center; align-items: center; position: relative; }
-        .preview-container {
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            width: 100%;
-            height: 100%;
-        }
-        .preview-image {
-            max-width: 100%;
-            max-height: 400px;
-            border-radius: 8px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            border: 1px solid var(--border-color);
-        }
-        .empty-state { text-align: center; color: var(--text-muted); font-size: 14px; }
+        .viewport-card { min-height: 450px; justify-content: flex-start; position: relative; }
+        .empty-state { text-align: center; color: var(--text-muted); font-size: 14px; margin: auto; }
         .empty-state-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
 
-        /* Metrics Bar */
+        /* Multi-preview Grid */
+        .preview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 16px;
+            width: 100%;
+            margin-bottom: 24px;
+            max-height: 320px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .preview-item {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 6px;
+            text-align: center;
+        }
+        .preview-item img {
+            width: 100%;
+            height: 90px;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+        .preview-item-name {
+            font-size: 11px;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 4px;
+        }
+
+        .results-container { display: none; flex-direction: column; width: 100%; height: 100%; }
+
         .metrics-bar {
             display: flex;
-            gap: 24px;
+            justify-content: space-between;
             background: rgba(15, 23, 42, 0.6);
             border: 1px solid var(--border-color);
             padding: 12px 20px;
             border-radius: 8px;
-            margin-top: 20px;
-            width: 100%;
             box-sizing: border-box;
+            width: 100%;
         }
         .metric-item { font-size: 12px; color: var(--text-muted); }
         .metric-item strong { color: var(--text-main); display: block; font-size: 14px; margin-top: 2px; }
@@ -204,7 +194,7 @@ HTML_UI = """
             background-color: var(--accent-green);
             color: white;
             text-decoration: none;
-            padding: 12px;
+            padding: 14px;
             border-radius: 6px;
             font-size: 14px;
             font-weight: 600;
@@ -214,9 +204,7 @@ HTML_UI = """
             margin-top: 16px;
             display: block;
         }
-        .btn-download:hover { opacity: 0.9; }
 
-        /* System Logs / Footer banner */
         .footer-banner {
             text-align: center;
             padding: 20px;
@@ -224,33 +212,29 @@ HTML_UI = """
             color: var(--text-muted);
             border-top: 1px solid var(--border-color);
             background-color: var(--bg-secondary);
+            margin-top: auto;
         }
     </style>
 </head>
 <body>
 
-    <!-- Header Navigation Bar -->
     <div class="navbar">
-        <div class="nav-logo">⚡ CloudScale <span>// Engine</span></div>
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <div class="badge">RAJ CHOUGALE DEVOPS PROJECT </div>
-        </div>
+        <div class="nav-logo">⚡ CloudScale <span>// Bulk Engine</span></div>
+        <div class="badge">AWS RUNTIME ACTIVE</div>
     </div>
 
-    <!-- Main Content Container -->
     <div class="main-layout">
-        
-        <!-- Left Side: Control Settings Panel -->
+        <!-- Control Card -->
         <div class="card">
             <h3 class="card-title">Configuration</h3>
-            <div class="card-subtitle">Set execution variables for processing</div>
+            <div class="card-subtitle">Upload up to 20 images at once</div>
             
-            <form id="resizerForm">
+            <form id="bulkResizerForm">
                 <div class="form-group">
-                    <label>INPUT TARGET SOURCE</label>
+                    <label>INPUT TARGET SOURCES (MAX 20)</label>
                     <div class="file-upload-wrapper">
-                        <span class="upload-text" id="fileStatusLabel">Drag file here or <strong>browse</strong></span>
-                        <input type="file" id="imageInput" accept="image/*" required>
+                        <span class="upload-text" id="fileStatusLabel">Select or drag files</span>
+                        <input type="file" id="imageInput" accept="image/*" multiple required>
                     </div>
                 </div>
                 
@@ -265,96 +249,117 @@ HTML_UI = """
                     </div>
                 </div>
                 
-                <button type="submit" id="processBtn">Execute Pipeline Tasks</button>
+                <button type="submit" id="processBtn">Execute Batch Job</button>
             </form>
         </div>
 
-        <!-- Right Side: Live Asset Output Viewport -->
+        <!-- Viewport Card -->
         <div class="card viewport-card">
-            <!-- Default Placeholder State -->
             <div class="empty-state" id="emptyState">
-                <div class="empty-state-icon">🖼️</div>
-                <div>Awaiting payload image assets for optimization processing...</div>
+                <div class="empty-state-icon">📂</div>
+                <div>Awaiting batch payload image assets...</div>
             </div>
 
-            <!-- Active Output Result State -->
-            <div class="preview-container" id="previewContainer">
-                <img src="" id="outputImage" class="preview-image" alt="Optimized output asset">
+            <div class="results-container" id="resultsContainer">
+                <h3 style="font-size: 15px; margin-top:0; margin-bottom:12px; font-weight:600;">Optimized Output Previews</h3>
+                <div class="preview-grid" id="previewGrid"></div>
                 
                 <div class="metrics-bar">
-                    <div class="metric-item">OUTPUT DIMENSIONS<strong id="metricDim">0 x 0</strong></div>
-                    <div class="metric-item">RUNTIME ENVIRONMENT<strong>AWS EC2 Container</strong></div>
-                    <div class="metric-item">STATUS BADGE<strong style="color: var(--accent-green);">SUCCESS (200)</strong></div>
+                    <div class="metric-item">BATCH COUNT <strong id="metricCount">0 Files</strong></div>
+                    <div class="metric-item">TARGET RESOLUTION <strong id="metricDim">500 x 500</strong></div>
+                    <div class="metric-item">OUTPUT PACKAGE <strong>ZIP Archive</strong></div>
                 </div>
 
-                <a href="" id="downloadLink" class="btn-download" download="optimized_asset.jpg">Download Image Asset</a>
+                <a href="" id="downloadLink" class="btn-download">Download All Resized Images (.ZIP)</a>
             </div>
         </div>
-
     </div>
 
-    <!-- System Status Footer Banner -->
     <div class="footer-banner">
         Infrastructure Orchestration Node Deployed via Jenkins CI/CD Lifecycle Automation.
     </div>
 
     <script>
-        // Real-time file name reflection
-        document.getElementById('imageInput').addEventListener('change', function(e) {
-            const fileName = e.target.files[0] ? e.target.files[0].name : "Browse files";
-            document.getElementById('fileStatusLabel').innerText = fileName;
+        const imageInput = document.getElementById('imageInput');
+        const fileStatusLabel = document.getElementById('fileStatusLabel');
+
+        // Limit files to 20 and show names
+        imageInput.addEventListener('change', function(e) {
+            const files = e.target.files;
+            if (files.length > 20) {
+                alert("Please select a maximum of 20 images at one time.");
+                imageInput.value = '';
+                fileStatusLabel.innerText = "Select or drag files";
+                return;
+            }
+            fileStatusLabel.innerText = `${files.length} images staged for pipeline`;
         });
 
-        // Intercept network requests via JavaScript
-        document.getElementById('resizerForm').addEventListener('submit', async function(e) {
+        document.getElementById('bulkResizerForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
-            const file = document.getElementById('imageInput').files[0];
+            const files = imageInput.files;
             const width = document.getElementById('widthInput').value;
             const height = document.getElementById('heightInput').value;
             
             const processBtn = document.getElementById('processBtn');
             const emptyState = document.getElementById('emptyState');
-            const previewContainer = document.getElementById('previewContainer');
-            const outputImage = document.getElementById('outputImage');
+            const resultsContainer = document.getElementById('resultsContainer');
+            const previewGrid = document.getElementById('previewGrid');
             const downloadLink = document.getElementById('downloadLink');
-            
-            if(!file) return;
 
-            // Loading state adjustments
+            if (files.length === 0) return;
+
             processBtn.disabled = true;
-            processBtn.innerText = "Processing Cloud Tensors...";
-            
+            processBtn.innerText = "Running Batch Cluster...";
+            previewGrid.innerHTML = ''; // Clear previous images
+
             const formData = new FormData();
-            formData.append('image', file);
             formData.append('width', width);
             formData.append('height', height);
+            
+            // Loop and add all images to form data layout
+            for (let i = 0; i < files.length; i++) {
+                formData.append('images', files[i]);
+            }
 
             try {
-                const response = await fetch('/resize', {
+                const response = await fetch('/resize-bulk', {
                     method: 'POST',
                     body: formData
                 });
 
-                if(!response.ok) throw new Error("API Failure Status");
+                if (!response.ok) throw new Error("Batch job failed");
 
                 const blob = await response.blob();
-                const blobUrl = URL.createObjectURL(blob);
+                const zipUrl = URL.createObjectURL(blob);
 
-                // Update viewport rendering
+                // Populate instant preview icons using browser cache mapping
+                for (let i = 0; i < files.length; i++) {
+                    const itemUrl = URL.createObjectURL(files[i]);
+                    const itemHtml = `
+                        <div class="preview-item">
+                            <img src="${itemUrl}">
+                            <div class="preview-item-name">${files[i].name}</div>
+                        </div>
+                    `;
+                    previewGrid.insertAdjacentHTML('beforeend', itemHtml);
+                }
+
                 emptyState.style.display = "none";
-                previewContainer.style.display = "flex";
-                outputImage.src = blobUrl;
-                downloadLink.href = blobUrl;
-                downloadLink.download = `optimized_${file.name}`;
+                resultsContainer.style.display = "flex";
                 
+                document.getElementById('metricCount').innerText = `${files.length} Files`;
                 document.getElementById('metricDim').innerText = `${width}px × ${height}px`;
+                
+                downloadLink.href = zipUrl;
+                downloadLink.download = "cloudscale_optimized_images.zip";
 
             } catch (err) {
-                alert("Runtime error during remote service manipulation processing tasks.");
+                alert("Runtime error during batch operations.");
             } finally {
                 processBtn.disabled = false;
-                processBtn.innerText = "Execute Pipeline Tasks";
+                processBtn.innerText = "Execute Batch Job";
             }
         });
     </script>
@@ -370,26 +375,40 @@ def home():
 def health_check():
     return jsonify({"status": "healthy"}), 200
 
-@app.route('/resize', methods=['POST'])
-def resize_image():
-    if 'image' not in request.files:
-        return jsonify({"error": "No asset file parsed"}), 400
+@app.route('/resize-bulk', methods=['POST'])
+def resize_bulk():
+    if 'images' not in request.files:
+        return jsonify({"error": "No image assets uploaded"}), 400
     
-    file = request.files['image']
+    files = request.files.getlist('images')
+    width = int(request.form.get('width', 500))
+    height = int(request.form.get('height', 500))
+
+    # Output streaming zip memory allocation
+    zip_buffer = io.BytesIO()
+
     try:
-        width = int(request.form.get('width', 500))
-        height = int(request.form.get('height', 500))
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for file in files:
+                if file.filename == '':
+                    continue
+                
+                # Open, identify layout metadata, and resize individual image stream
+                img = Image.open(file.stream)
+                img_format = img.format if img.format else 'JPEG'
+                img = img.resize((width, height), Image.Resampling.LANCZOS)
 
-        img = Image.open(file.stream)
-        img_format = img.format if img.format else 'JPEG'
-        
-        img = img.resize((width, height), Image.Resampling.LANCZOS)
+                # Save output to separate memory slot
+                img_io = io.BytesIO()
+                img.save(img_io, format=img_format)
+                img_io.seek(0)
 
-        img_io = io.BytesIO()
-        img.save(img_io, format=img_format)
-        img_io.seek(0)
-        
-        return send_file(img_io, mimetype=f'image/{img_format.lower()}')
+                # Append optimized file inside zip configuration matrix
+                zip_file.writestr(f"resized_{file.filename}", img_io.getvalue())
+
+        zip_buffer.seek(0)
+        return send_file(zip_buffer, mimetype='application/zip', as_attachment=True, download_name='resized_images.zip')
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
