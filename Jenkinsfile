@@ -64,6 +64,7 @@ pipeline {
             }
         }
     }
+    options { skipDefaultCheckout() }
 
     post {
         success {
