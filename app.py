@@ -233,7 +233,7 @@ HTML_UI = """
     <div class="navbar">
         <div class="nav-logo">⚡ CloudScale <span>// Engine</span></div>
         <div style="display: flex; align-items: center; gap: 12px;">
-            <div class="badge">AWS RUNTIME ACTIVE</div>
+            <div class="badge">RAJ CHOUGALE DEVOPS PROJECT </div>
         </div>
     </div>
 
