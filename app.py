@@ -1,39 +1,49 @@
 import os
-import sys
+from flask import Flask, request, send_file, jsonify
 from PIL import Image
+import io
 
-def resize_image(input_path, output_path, target_width=300):
-    """
-    Concept: Aspect-Ratio Preserving Resize
-    We don't want to stretch or distort the image. We calculate the new height 
-    proportionally based on our target width.
-    """
-    try:
-        if not os.path.exists(input_path):
-            print(f"Error: Input file '{input_path}' not found.")
-            sys.exit(1)
-            
-        with Image.open(input_path) as img:
-            # Calculate proportional height
-            width_percent = (target_width / float(img.size[0]))
-            target_height = int((float(img.size[1]) * float(width_percent)))
-            
-            # Perform the resize operation
-            resized_img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
-            
-            # Save the processed image
-            resized_img.save(output_path)
-            print(f"Success! Resized image saved to: {output_path} ({target_width}x{target_height})")
-            
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        sys.exit(1)
+app = Flask(__name__)
 
-if __name__ == "__main__":
-    # In a production microservice, paths are often handled via environment variables
-    # or command-line arguments passed by the orchestrator.
-    INPUT_FILE = os.getenv("INPUT_IMAGE", "input.jpg")
-    OUTPUT_FILE = os.getenv("OUTPUT_IMAGE", "output_thumbnail.jpg")
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy", "service": "image-resizer"}), 200
+
+@app.route('/resize', methods=['POST'])
+def resize_image():
+  
+    if 'image' not in request.files:
+        return jsonify({"error": "No image file provided in the form field named 'image'"}), 400
     
-    print("Starting Image Processing Microservice...")
-    resize_image(INPUT_FILE, OUTPUT_FILE)
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify({"error": "Empty filename"}), 400
+
+    try:
+       
+        width = int(request.form.get('width', 300))
+        height = int(request.form.get('height', 300))
+
+      
+        img = Image.open(file.stream)
+        img = img.resize((width, height), Image.Resampling.LANCZOS)
+
+      
+        img_io = io.BytesIO()
+        
+   
+        img_format = img.format if img.format else 'JPEG'
+        img.save(img_io, format=img_format)
+        img_io.seek(0)
+
+        print(f"Successfully resized image to {width}x{height}")
+        
+        
+        return send_file(img_io, mimetype=f'image/{img_format.lower()}')
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to process image: {str(e)}"}), 500
+
+if __name__ == '__main__':
+   
+    app.run(host='0.0.0.0', port=5000)
