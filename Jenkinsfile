@@ -1,6 +1,7 @@
 pipeline {
     agent any
 
+      options { skipDefaultCheckout() }
     environment {
         
         DOCKER_HUB_USER  = "rajchouugale"
@@ -64,7 +65,7 @@ pipeline {
             }
         }
     }
-    options { skipDefaultCheckout() }
+  
 
     post {
         success {
